@@ -1,5 +1,10 @@
 # Symulacja Agentowa
 
+## Proponowany język:
+Python
+## Proponowana biblioteka:
+https://mesa.readthedocs.io/latest/
+
 ## Model Danych
 
 Poniższy diagram UML przedstawia strukturę klas używaną w symulacji społeczeństw (agentów).
