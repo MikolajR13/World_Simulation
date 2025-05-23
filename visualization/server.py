@@ -60,7 +60,7 @@ class InfoDisplay(TextElement):
 
 def agent_portrayal(agent):
     """
-    Definiuje wygląd agenta na wizualizacji.
+    Definiuje wygląd agenta na wizualizacji, w tym tooltip i kształt.
 
     Args:
         agent: Agent do narysowania
@@ -68,23 +68,47 @@ def agent_portrayal(agent):
     Returns:
         dict: Słownik z parametrami wyglądu agenta
     """
+    if agent is None:
+        return
+
     portrayal = {
-        "Shape": "circle",
         "Filled": "true",
-        "Layer": 0,
-        "r": 0.5 + agent.population / 200,  # Promień zależny od liczebności
+        "Layer": 1,  # Podnosimy agentów na warstwę 1 (jeśli chcemy rysować tło)
+        "r": 0.5 + agent.population / 200  # Promień zależny od liczebności
     }
 
-    # Kolor zależny od poziomu agresji
-    if agent.aggression > 70:
-        portrayal["Color"] = "red"
-    elif agent.aggression > 40:
-        portrayal["Color"] = "orange"
-    else:
-        portrayal["Color"] = "green"
+    # --- Dynamiczny Kształt ---
+    # Sprawdzamy, czy agent migrował w tej turze
+    is_migrating = agent.last_migrated == agent.model.current_period
 
-    # Przezroczystość zależna od zdrowia
+    if is_migrating:
+        portrayal["Shape"] = "rect" # Zmieniamy kształt na prostokąt
+        portrayal["w"] = 0.8 * portrayal["r"] * 2 # Szerokość prostokąta
+        portrayal["h"] = 0.8 * portrayal["r"] * 2 # Wysokość prostokąta
+        portrayal["Color"] = "blue" # Inny kolor dla migrujących
+    elif agent.aggression > 70:
+        portrayal["Shape"] = "circle" # Kółko
+        portrayal["Color"] = "red" # Kolor czerwony dla agresywnych
+    elif agent.aggression > 40:
+        portrayal["Shape"] = "circle"
+        portrayal["Color"] = "orange"  # Pomarańczowy dla średnio agresywnych
+    else:
+        portrayal["Shape"] = "circle"
+        portrayal["Color"] = "green"  # Zielony dla pokojowych
+
+    # Przezroczystość zależna od zdrowia (bez zmian)
     portrayal["opacity"] = max(0.4, agent.health / 100)
+
+    portrayal["ID"] = agent.unique_id
+    portrayal["Population"] = int(agent.population)
+    portrayal["Health"] = int(agent.health)
+    portrayal["Aggression"] = int(agent.aggression)
+    portrayal["Trust"] = int(agent.trust)
+    portrayal["Food"] = int(agent.food_supply)
+    portrayal["Water"] = int(agent.water_supply)
+    portrayal["Hunger"] = int(agent.hunger)
+    portrayal["Thirst"] = int(agent.thirst)
+    portrayal["Endurance"] = int(agent.endurance)
 
     return portrayal
 
@@ -101,8 +125,8 @@ def create_server():
     }
 
     # Ustawiamy MAKSYMALNE wymiary siatki na stałe
-    max_width = 50
-    max_height = 50
+    max_width = 20
+    max_height = 20
 
     # Tworzymy CanvasGrid RAZ z wymiarami początkowymi.
     grid = CanvasGrid(agent_portrayal, max_width, max_height, 600, 600)
