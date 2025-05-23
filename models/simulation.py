@@ -1,16 +1,15 @@
 """
 Moduł definiujący główną klasę symulacji.
 """
-from mesa.agent import Agent
 from mesa.model import Model
 from mesa.space import MultiGrid
 from mesa.time import RandomActivation
 from mesa.datacollection import DataCollector
-import mesa
+# Usunięto import 'Agent' from mesa.agent, bo jest nieużywany i konfliktuje
 from typing import List, Tuple
 
 from utils.point import Point
-from models.agent import Agent
+from models.agent import Agent  # Poprawiony import
 from models.map import Map
 from models.environment import Environment
 
@@ -30,6 +29,12 @@ class SimulationModel(Model):
             num_agents (int): Początkowa liczba agentów
         """
         super().__init__()
+
+        # Zapisujemy parametry wejściowe, aby można je było wyświetlić
+        self.initial_map_width = map_width
+        self.initial_map_height = map_height
+        self.initial_num_agents = num_agents
+
         self.schedule = RandomActivation(self)
         self.grid = MultiGrid(map_width, map_height, True)
 
@@ -39,6 +44,7 @@ class SimulationModel(Model):
 
         # Parametry symulacji
         self.current_period = 0
+        self.running = True # Dodajemy flagę, czy symulacja działa
 
         # Inicjalizacja agentów
         self.initialize_agents(num_agents)
@@ -51,7 +57,11 @@ class SimulationModel(Model):
                 "Average_population": lambda m: self.average_population(),
                 "Average_aggression": lambda m: self.average_aggression(),
                 "Average_trust": lambda m: self.average_trust(),
-                "Total_population": lambda m: self.total_population()
+                "Total_population": lambda m: self.total_population(),
+                "Weather_Condition": lambda m: m.environment.weather_condition,
+                # Dodajemy reportery do wyświetlania aktualnych wymiarów
+                "Current_Width": lambda m: m.grid.width,
+                "Current_Height": lambda m: m.grid.height
             },
             agent_reporters={
                 "Health": "health",
@@ -63,6 +73,9 @@ class SimulationModel(Model):
             }
         )
 
+        # Usunęliśmy ValueError - nie rozwiąże problemu, a tylko go powoduje.
+        # Problem leży w CanvasGrid, a nie w MultiGrid.
+
     def initialize_agents(self, num_agents):
         """
         Inicjalizuje agentów w losowych pozycjach na mapie.
@@ -70,6 +83,15 @@ class SimulationModel(Model):
         Args:
             num_agents (int): Liczba agentów do zainicjalizowania
         """
+        # Czyścimy starych agentów, jeśli istnieją (ważne przy resecie)
+        self.schedule = RandomActivation(self)
+        # Usuwamy agentów z siatki (ważne - MultiGrid może przechowywać stare)
+        for cell in self.grid.coord_iter():
+            agents, x, y = cell
+            for agent in list(agents): # Używamy list() do bezpiecznego usuwania
+                 self.grid.remove_agent(agent)
+
+        # Tworzymy nowych agentów
         for i in range(num_agents):
             x = self.random.randrange(self.grid.width)
             y = self.random.randrange(self.grid.height)
@@ -78,6 +100,7 @@ class SimulationModel(Model):
             agent = Agent(i, self, position)
             self.schedule.add(agent)
             self.grid.place_agent(agent, (x, y))
+
 
     def average_health(self):
         """
