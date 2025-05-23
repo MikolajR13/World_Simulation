@@ -139,6 +139,7 @@ class Agent(MesaAgent):
             self.water_supply = min(100, self.water_supply + agent.water_supply * 0.5)
             agent.food_supply *= 0.5
             agent.water_supply *= 0.5
+            self.model.conflicts_this_step += 1
             return True
         return False
 
@@ -166,6 +167,9 @@ class Agent(MesaAgent):
             self.food_supply = min(100, self.food_supply + agent.food_supply)
             self.water_supply = min(100, self.water_supply + agent.water_supply)
             self.model.schedule.remove(agent)
+
+            self.model.mergers_this_step += 1
+
             return True
         return False
 

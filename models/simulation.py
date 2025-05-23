@@ -46,6 +46,9 @@ class SimulationModel(Model):
         self.current_period = 0
         self.running = True # Dodajemy flagę, czy symulacja działa
 
+        self.conflicts_this_step = 0
+        self.mergers_this_step = 0
+
         # Inicjalizacja agentów
         self.initialize_agents(num_agents)
 
@@ -59,9 +62,15 @@ class SimulationModel(Model):
                 "Average_trust": lambda m: self.average_trust(),
                 "Total_population": lambda m: self.total_population(),
                 "Weather_Condition": lambda m: m.environment.weather_condition,
-                # Dodajemy reportery do wyświetlania aktualnych wymiarów
                 "Current_Width": lambda m: m.grid.width,
-                "Current_Height": lambda m: m.grid.height
+                "Current_Height": lambda m: m.grid.height,
+                "Average_Hunger": lambda m: self.average_hunger(),
+                "Average_Thirst": lambda m: self.average_thirst(),
+                "Average_Age": lambda m: self.average_age(),
+                "Average_Food_Supply": lambda m: self.average_food_supply(),
+                "Average_Water_Supply": lambda m: self.average_water_supply(),
+                "Conflicts": lambda m: m.conflicts_this_step,
+                "Mergers": lambda m: m.mergers_this_step,
             },
             agent_reporters={
                 "Health": "health",
@@ -72,9 +81,6 @@ class SimulationModel(Model):
                 "Water_supply": "water_supply"
             }
         )
-
-        # Usunęliśmy ValueError - nie rozwiąże problemu, a tylko go powoduje.
-        # Problem leży w CanvasGrid, a nie w MultiGrid.
 
     def initialize_agents(self, num_agents):
         """
@@ -100,7 +106,6 @@ class SimulationModel(Model):
             agent = Agent(i, self, position)
             self.schedule.add(agent)
             self.grid.place_agent(agent, (x, y))
-
 
     def average_health(self):
         """
@@ -151,8 +156,32 @@ class SimulationModel(Model):
         """
         return sum(agent.population for agent in self.schedule.agents)
 
+    def average_hunger(self):
+        hunger_values = [agent.hunger for agent in self.schedule.agents]
+        return sum(hunger_values) / len(hunger_values) if hunger_values else 0
+
+    def average_thirst(self):
+        thirst_values = [agent.thirst for agent in self.schedule.agents]
+        return sum(thirst_values) / len(thirst_values) if thirst_values else 0
+
+    def average_age(self):
+        age_values = [agent.age for agent in self.schedule.agents]
+        return sum(age_values) / len(age_values) if age_values else 0
+
+    def average_food_supply(self):
+        food_values = [agent.food_supply for agent in self.schedule.agents]
+        return sum(food_values) / len(food_values) if food_values else 0
+
+    def average_water_supply(self):
+        water_values = [agent.water_supply for agent in self.schedule.agents]
+        return sum(water_values) / len(water_values) if water_values else 0
+
     def step(self):
         """Wykonuje jeden krok symulacji."""
+        # Resetowanie liczników
+        self.conflicts_this_step = 0
+        self.mergers_this_step = 0
+
         # Aktualizacja środowiska
         self.environment.update_resources()
         self.environment.impact_on_agents(self.schedule.agents)

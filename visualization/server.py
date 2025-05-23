@@ -53,6 +53,11 @@ class SeasonDisplay(TextElement):
         """
 
 
+class InfoDisplay(TextElement):
+    def render(self, model):
+        return '<p style="color:blue; font-weight:bold;">INFO: Wizualizacja mapy ma stały rozmiar (50x50). Zmiana suwaków i kliknięcie \'Reset\' zmieni *faktyczny* obszar symulacji wewnątrz tej siatki.</p>'
+
+
 def agent_portrayal(agent):
     """
     Definiuje wygląd agenta na wizualizacji.
@@ -99,11 +104,14 @@ def create_server():
     max_width = 50
     max_height = 50
 
-    # Wyciągamy wartości początkowe/domyślne - CanvasGrid musi mieć jakiś rozmiar
-    # Najlepiej, żeby odpowiadały wartościom domyślnym suwaków.
-
     # Tworzymy CanvasGrid RAZ z wymiarami początkowymi.
     grid = CanvasGrid(agent_portrayal, max_width, max_height, 600, 600)
+
+    # podstawowe wartości
+    # max_width = 20
+    # max_height = 50
+    # grid = CanvasGrid(agent_portrayal, max_width, max_height, 500, 500)
+
     # Definiujemy wykresy
     charts = [
         ChartModule([{"Label": "Number_of_agents", "Color": "black"}]),
@@ -116,13 +124,23 @@ def create_server():
             {"Label": "Average_trust", "Color": "green"}
         ]),
         ChartModule([{"Label": "Total_population", "Color": "purple"}]),
-        ChartModule([{"Label": "Weather_Condition", "Color": "blue"}])
+        ChartModule([{"Label": "Weather_Condition", "Color": "blue"}]),
+        ChartModule([
+            {"Label": "Average_Hunger", "Color": "brown"},
+            {"Label": "Average_Thirst", "Color": "cyan"}
+        ], data_collector_name='datacollector'),
+        ChartModule([
+            {"Label": "Average_Food_Supply", "Color": "lime"},
+            {"Label": "Average_Water_Supply", "Color": "deepskyblue"}
+        ], data_collector_name='datacollector'),
+        ChartModule([
+            {"Label": "Average_Age", "Color": "darkgray"}
+        ], data_collector_name='datacollector'),
+        ChartModule([
+            {"Label": "Conflicts", "Color": "magenta"},
+            {"Label": "Mergers", "Color": "orange"}
+        ], data_collector_name='datacollector')
     ]
-
-    # Zmieniamy tekst ostrzeżenia, aby odzwierciedlał nowe zachowanie
-    class InfoDisplay(TextElement):
-        def render(self, model):
-            return '<p style="color:blue; font-weight:bold;">INFO: Wizualizacja mapy ma stały rozmiar (50x50). Zmiana suwaków i kliknięcie \'Reset\' zmieni *faktyczny* obszar symulacji wewnątrz tej siatki.</p>'
 
     visualization_elements = [InfoDisplay(), SeasonDisplay(), grid] + charts
 
