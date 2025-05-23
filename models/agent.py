@@ -42,6 +42,14 @@ class Agent(MesaAgent):
         self.position = position
         self.last_migrated = -1  # znacznik ostatniej migracji
 
+        # Atrybuty pamięci
+        self.wars_won = 0
+        self.wars_lost = 0
+        self.crises_survived = 0
+        self.migrations_count = 0
+        self.prosperity_periods = 0
+        self.dominant_trait = "Stable"  # Możliwe: Stable, Warlike, Survivor, Prosperous, Nomadic
+
     # ------------------------------------------------------------------ #
     #                       AKTUALIZACJA POPULACJI                       #
     # ------------------------------------------------------------------ #
@@ -118,6 +126,7 @@ class Agent(MesaAgent):
             self.consume_food_supply()
             self.consume_water_supply()
             self.last_migrated = self.model.current_period
+            self.migrations_count += 1
 
     # ------------------------------------------------------------------ #
     #                         INTERAKCJE AGENTÓW                         #
@@ -140,7 +149,14 @@ class Agent(MesaAgent):
             agent.food_supply *= 0.5
             agent.water_supply *= 0.5
             self.model.conflicts_this_step += 1
+            self.wars_won += 1
+            agent.wars_lost += 1
+            self.model.conflicts_this_step += 1
             return True
+        else:
+            self.wars_lost += 1
+            agent.wars_won += 1  # Broniący się "wygrywa"
+            self.model.conflicts_this_step += 1  # Nadal był konflikt
         return False
 
     def merge_tribes(self, agent) -> bool:
@@ -173,11 +189,43 @@ class Agent(MesaAgent):
             return True
         return False
 
+    def update_dominant_trait(self):
+        """ Aktualizuje dominujący 'charakter' plemienia na podstawie historii. """
+        traits = {
+            "Warlike": self.wars_won,
+            "Survivor": self.crises_survived,
+            "Nomadic": self.migrations_count,
+            "Prosperous": self.prosperity_periods
+        }
+
+        # Znajdź cechę z najwyższym wynikiem (i jeśli przekracza pewien próg, np. 3)
+        max_trait = "Stable"
+        max_value = 3  # Próg, aby cecha stała się dominująca
+
+        for trait, value in traits.items():
+            if value > max_value:
+                max_value = value
+                max_trait = trait
+
+        # Jeśli plemię jest bardzo stare i stabilne, może to być jego cecha
+        if max_trait == "Stable" and self.age > 60:
+            max_trait = "Established"  # Dodajemy nową cechę "Ugruntowane"
+
+        self.dominant_trait = max_trait
     # ------------------------------------------------------------------ #
     #                           GŁÓWNY KROK                             #
     # ------------------------------------------------------------------ #
     def step(self):
         """Wykonuje pojedynczy krok agenta w symulacji."""
+        # Sprawdzanie kryzysu i dobrobytu
+        is_in_crisis_now = self.hunger > 80 or self.thirst > 80 or self.health < 20
+        is_prosperous_now = self.food_supply > 80 and self.water_supply > 80 and self.health > 80
+
+        if is_in_crisis_now:
+            self.crises_survived += 1 # Liczymy każdy krok w kryzysie
+        if is_prosperous_now:
+            self.prosperity_periods += 1
+
         # --- 1. Aktualizacje podstawowych potrzeb ---
         self.update_hunger()
         self.update_thirst()
@@ -211,6 +259,10 @@ class Agent(MesaAgent):
 
         # --- 7. Upływ czasu ---
         self.progress_to_next_period()
+
+        # --- 8. Aktualizacja cechy co 25 kroków ---
+        if self.model.current_period % 25 == 0:
+            self.update_dominant_trait()
 
     # ------------------------------------------------------------------ #
     #                KALKULATORY PARAMETRÓW SPOŁECZNYCH                  #

@@ -55,7 +55,29 @@ class SeasonDisplay(TextElement):
 
 class InfoDisplay(TextElement):
     def render(self, model):
-        return '<p style="color:blue; font-weight:bold;">INFO: Wizualizacja mapy ma stały rozmiar (50x50). Zmiana suwaków i kliknięcie \'Reset\' zmieni *faktyczny* obszar symulacji wewnątrz tej siatki.</p>'
+        return ('<p style="color:blue; font-weight:bold;">INFO: The map visualization has a fixed size (50x50).'
+                ' Changing the sliders and clicking `Reset` will change the *actual* simulation area inside this grid.</p>')
+
+
+class LegendElement(TextElement):
+    """ Wyświetla legendę dla wizualizacji agentów. """
+    def render(self, model):
+        legend_html = """
+        <h4>Legend (Trait-Based):</h4>
+        <ul style="list-style-type:none; padding: 0;">
+            <li><span style="color:green; font-size: 1.5em;">●</span> <b>Stable:</b> Standard tribe.</li>
+            <li><span style="color:red; font-size: 1.5em;">●</span> <b>Warlike:</b> History of many conflicts.</li>
+            <li><span style="color:brown; font-size: 1.5em;">●</span> <b>Survivor:</b> Endured many crises.</li>
+            <li><span style="color:gold; font-size: 1.5em;">●</span> <b>Prosperous:</b> History of prosperity.</li>
+            <li><span style="color:purple; font-size: 1.5em;">●</span> <b>Established:</b> Very old tribe.</li>
+            <hr>
+            <li><span style="color:blue; display:inline-block; width:12px; height:12px; background-color:blue; vertical-align: middle; margin-right: 3px;"></span> <i>(Overlay)</i> Migrating (current step).</li>
+            <li><i>(Border)</i> High Aggression (current).</li>
+            <li><i>(Opacity)</i> Current Health.</li>
+            <li><i>(Size)</i> Current Population.</li>
+        </ul>
+        """
+        return legend_html
 
 
 def agent_portrayal(agent):
@@ -73,42 +95,53 @@ def agent_portrayal(agent):
 
     portrayal = {
         "Filled": "true",
-        "Layer": 1,  # Podnosimy agentów na warstwę 1 (jeśli chcemy rysować tło)
-        "r": 0.5 + agent.population / 200  # Promień zależny od liczebności
+        "Layer": 1,
+        "r": 0.5 + agent.population / 200,
+        "Shape": "circle",
+        "opacity": max(0.4, agent.health / 100)
     }
 
-    # --- Dynamiczny Kształt ---
-    # Sprawdzamy, czy agent migrował w tej turze
-    is_migrating = agent.last_migrated == agent.model.current_period
+    # --- Ustalanie wyglądu wg CECHY DOMINUJĄCEJ ---
+    trait = agent.dominant_trait
+    if trait == "Warlike":
+        portrayal["Color"] = "red"
+    elif trait == "Survivor":
+        portrayal["Color"] = "brown"
+    elif trait == "Prosperous":
+        portrayal["Color"] = "gold"
+    elif trait == "Established":
+         portrayal["Color"] = "purple"
+    else: # Stable or default
+        portrayal["Color"] = "green"
 
-    if is_migrating:
-        portrayal["Shape"] = "rect" # Zmieniamy kształt na prostokąt
-        portrayal["w"] = 0.8 * portrayal["r"] * 2 # Szerokość prostokąta
-        portrayal["h"] = 0.8 * portrayal["r"] * 2 # Wysokość prostokąta
-        portrayal["Color"] = "blue" # Inny kolor dla migrujących
-    elif agent.aggression > 70:
-        portrayal["Shape"] = "circle" # Kółko
-        portrayal["Color"] = "red" # Kolor czerwony dla agresywnych
-    elif agent.aggression > 40:
-        portrayal["Shape"] = "circle"
-        portrayal["Color"] = "orange"  # Pomarańczowy dla średnio agresywnych
-    else:
-        portrayal["Shape"] = "circle"
-        portrayal["Color"] = "green"  # Zielony dla pokojowych
+    # --- MODYFIKATORY BIEŻĄCEGO STANU ---
+    # Migracja ma wysoki priorytet wizualny - zmienia kształt i kolor
+    if agent.last_migrated == agent.model.current_period:
+        portrayal["Shape"] = "rect"
+        portrayal["w"] = 0.8 * portrayal["r"] * 2
+        portrayal["h"] = 0.8 * portrayal["r"] * 2
+        portrayal["Color"] = "blue"
 
-    # Przezroczystość zależna od zdrowia (bez zmian)
-    portrayal["opacity"] = max(0.4, agent.health / 100)
+    # Wysoka agresja (jeśli nie migruje) dodaje czerwoną obwódkę
+    if agent.aggression > 70 and portrayal["Shape"] == "circle":
+        portrayal["stroke_color"] = "#FF0000" # Czerwona obwódka
 
+    # Kryzys (jeśli nie migruje) zmniejsza rozmiar/opacity
+    if (agent.hunger > 80 or agent.thirst > 80) and portrayal["Shape"] == "circle":
+         portrayal["r"] *= 0.8
+         portrayal["opacity"] = max(0.3, portrayal["opacity"] * 0.7)
+
+
+    # --- Tooltip  ---
     portrayal["ID"] = agent.unique_id
+    portrayal["Trait"] = agent.dominant_trait # Pokazujemy cechę!
     portrayal["Population"] = int(agent.population)
     portrayal["Health"] = int(agent.health)
+    portrayal["Age"] = round(agent.age, 1)
     portrayal["Aggression"] = int(agent.aggression)
-    portrayal["Trust"] = int(agent.trust)
-    portrayal["Food"] = int(agent.food_supply)
-    portrayal["Water"] = int(agent.water_supply)
-    portrayal["Hunger"] = int(agent.hunger)
-    portrayal["Thirst"] = int(agent.thirst)
-    portrayal["Endurance"] = int(agent.endurance)
+    portrayal["Wars Won"] = agent.wars_won
+    portrayal["Crises Survived"] = agent.crises_survived
+    portrayal["Migrations"] = agent.migrations_count
 
     return portrayal
 
@@ -117,11 +150,11 @@ def create_server():
     # Definiujemy parametry wejściowe
     model_params = {
         "map_width": UserSettableParameter("slider", "Map Width", 20, 5, 50, 1,
-                                           description="Szerokość mapy (wymaga restartu serwera)"),
+                                           description="Map width (requires server restart)"),
         "map_height": UserSettableParameter("slider", "Map Height", 20, 5, 50, 1,
-                                            description="Wysokość mapy (wymaga restartu serwera)"),
+                                            description="Map height (requires server restart)"),
         "num_agents": UserSettableParameter("slider", "Number of Agents", 5, 1, 20, 1,
-                                            description="Liczba agentów (działa po 'Reset')")
+                                            description="Number of agents (works after ‘Reset’)")
     }
 
     # Ustawiamy MAKSYMALNE wymiary siatki na stałe
@@ -166,7 +199,7 @@ def create_server():
         ], data_collector_name='datacollector')
     ]
 
-    visualization_elements = [InfoDisplay(), SeasonDisplay(), grid] + charts
+    visualization_elements = [InfoDisplay(), SeasonDisplay(), grid, LegendElement()] + charts
 
     # Tworzymy serwer - przekazujemy KLASĘ modelu i LISTĘ elementów
     server = ModularServer(
