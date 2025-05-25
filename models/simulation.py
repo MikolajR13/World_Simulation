@@ -5,11 +5,10 @@ from mesa.model import Model
 from mesa.space import MultiGrid
 from mesa.time import RandomActivation
 from mesa.datacollection import DataCollector
-# Usunięto import 'Agent' from mesa.agent, bo jest nieużywany i konfliktuje
 from typing import List, Tuple
 
 from utils.point import Point
-from models.agent import Agent  # Poprawiony import
+from models.agent import Agent
 from models.map import Map
 from models.environment import Environment
 
@@ -18,6 +17,8 @@ class SimulationModel(Model):
     """
     Główna klasa modelu symulacji.
     """
+    def get_terrain_map(self):
+        return [[field.terrain_difficulty for field in row] for row in self.map.fields]
 
     def __init__(self, map_width=20, map_height=20, num_agents=5):
         """
@@ -44,7 +45,7 @@ class SimulationModel(Model):
 
         # Parametry symulacji
         self.current_period = 0
-        self.running = True # Dodajemy flagę, czy symulacja działa
+        self.running = True  # Dodajemy flagę, czy symulacja działa
 
         self.conflicts_this_step = 0
         self.mergers_this_step = 0
@@ -71,6 +72,7 @@ class SimulationModel(Model):
                 "Average_Water_Supply": lambda m: self.average_water_supply(),
                 "Conflicts": lambda m: m.conflicts_this_step,
                 "Mergers": lambda m: m.mergers_this_step,
+                "TerrainMap": lambda m: m.get_terrain_map()
             },
             agent_reporters={
                 "Health": "health",
@@ -78,7 +80,9 @@ class SimulationModel(Model):
                 "Aggression": "aggression",
                 "Trust": "trust",
                 "Food_supply": "food_supply",
-                "Water_supply": "water_supply"
+                "Water_supply": "water_supply",
+                "DominantTrait": "dominant_trait",
+                "WarsWon": "wars_won"
             }
         )
 

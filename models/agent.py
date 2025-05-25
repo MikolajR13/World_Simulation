@@ -183,6 +183,7 @@ class Agent(MesaAgent):
             self.food_supply = min(100, self.food_supply + agent.food_supply)
             self.water_supply = min(100, self.water_supply + agent.water_supply)
             self.model.schedule.remove(agent)
+            self.model.grid.remove_agent(agent)
 
             self.model.mergers_this_step += 1
 
