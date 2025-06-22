@@ -41,6 +41,9 @@ class SeasonDisplay(TextElement):
         else:
             weather_desc = f'<span style="color:red;"><b>Extreme ({weather})</b></span>'
 
+        random_event_freq_display = model.random_event_frequency
+        global_food_mod_display = model.global_food_modifier
+
         return f"""
             <b>Current Season:</b> {season_emojis[season]}<br>
             <b>Weather Condition:</b> {weather_desc}<br>
@@ -50,6 +53,9 @@ class SeasonDisplay(TextElement):
             <b>Avg Aggression:</b> {avg_aggression}<br>
             <b>Avg Trust:</b> {avg_trust}<br>
             <b>Current Map Size:</b> {current_width}x{current_height}
+                        --- Global Settings ---<br>
+            <b>Random Event Freq.:</b> {random_event_freq_display:.2f}<br>
+            <b>Global Food Modifier:</b> {global_food_mod_display:.1f}x
         """
 
 
@@ -154,7 +160,15 @@ def create_server():
         "map_height": UserSettableParameter("slider", "Map Height", 20, 5, 50, 1,
                                             description="Map height (requires server restart)"),
         "num_agents": UserSettableParameter("slider", "Number of Agents", 5, 1, 20, 1,
-                                            description="Number of agents (works after ‘Reset’)")
+                                            description="Number of agents (works after ‘Reset’)"),
+        "random_event_frequency": UserSettableParameter(
+            "slider", "Random Event Frequency", 0.1, 0.0, 1.0, 0.01,
+            description="Probability of a random event occurring per step (applied on Reset)."
+        ),
+        "global_food_modifier": UserSettableParameter(
+            "slider", "Global Food Modifier", 1.0, 0.1, 3.0, 0.1,
+            description="Global multiplier for food availability on fields (applied on Reset)."
+        )
     }
 
     # Ustawiamy MAKSYMALNE wymiary siatki na stałe

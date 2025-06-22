@@ -13,7 +13,7 @@ class Environment:
     Klasa reprezentująca środowisko w symulacji.
     """
 
-    def __init__(self, map_obj: Map):
+    def __init__(self, map_obj: Map, global_food_modifier: float = 1.0, model_ref=None):
         """
         Inicjalizuje środowisko z podaną mapą.
 
@@ -23,14 +23,19 @@ class Environment:
         self.map = map_obj
         self.season = Season.SPRING
         self.weather_condition = 50
+        self.global_food_modifier = global_food_modifier
+        self.model = model_ref
 
     def update_resources(self):
         """Aktualizuje zasoby na wszystkich polach mapy."""
         for y in range(self.map.height):
             for x in range(self.map.width):
                 field = self.map.fields[y][x]
-                field.update_resources(self.season, self.weather_condition)
-
+                field.update_resources(
+                    self.season,
+                    self.weather_condition,
+                    self.model.global_food_modifier if self.model else 1.0 # Używamy self.model
+                )
     def impact_on_agents(self, agents):
         """
         Określa wpływ środowiska na agentów.

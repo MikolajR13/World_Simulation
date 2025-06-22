@@ -18,9 +18,12 @@ class SimulationModel(Model):
     Główna klasa modelu symulacji.
     """
     def get_terrain_map(self):
-        return [[field.terrain_difficulty for field in row] for row in self.map.fields]
+        if hasattr(self, 'map') and hasattr(self.map, 'fields'):
+            return [[field.terrain_difficulty for field in row] for row in self.map.fields]
+        return []
 
-    def __init__(self, map_width=20, map_height=20, num_agents=5):
+    def __init__(self, map_width=20, map_height=20, num_agents=5,
+                 random_event_frequency=0.1, global_food_modifier=1.0):
         """
         Inicjalizuje model symulacji.
 
@@ -28,6 +31,8 @@ class SimulationModel(Model):
             map_width (int): Szerokość mapy
             map_height (int): Wysokość mapy
             num_agents (int): Początkowa liczba agentów
+            random_event_frequency (float): Częstotliwość zdarzeń losowych (0.0 - 1.0)
+            global_food_modifier (float): Globalny mnożnik dostępności jedzenia
         """
         super().__init__()
 
@@ -36,12 +41,15 @@ class SimulationModel(Model):
         self.initial_map_height = map_height
         self.initial_num_agents = num_agents
 
+        self.random_event_frequency = random_event_frequency
+        self.global_food_modifier = global_food_modifier
+
         self.schedule = RandomActivation(self)
         self.grid = MultiGrid(map_width, map_height, True)
 
         # Inicjalizacja mapy i środowiska
         self.map = Map(map_width, map_height)
-        self.environment = Environment(self.map)
+        self.environment = Environment(self.map, global_food_modifier=self.global_food_modifier, model_ref=self)
 
         # Parametry symulacji
         self.current_period = 0
@@ -72,7 +80,9 @@ class SimulationModel(Model):
                 "Average_Water_Supply": lambda m: self.average_water_supply(),
                 "Conflicts": lambda m: m.conflicts_this_step,
                 "Mergers": lambda m: m.mergers_this_step,
-                "TerrainMap": lambda m: m.get_terrain_map()
+                "TerrainMap": lambda m: m.get_terrain_map(),
+                "RandomEventFrequency_Param": lambda m: m.random_event_frequency,
+                "GlobalFoodModifier_Param": lambda m: m.global_food_modifier
             },
             agent_reporters={
                 "Health": "health",
@@ -85,6 +95,7 @@ class SimulationModel(Model):
                 "WarsWon": "wars_won"
             }
         )
+        self.running = True
 
     def initialize_agents(self, num_agents):
         """
@@ -99,7 +110,7 @@ class SimulationModel(Model):
         for cell in self.grid.coord_iter():
             agents, x, y = cell
             for agent in list(agents): # Używamy list() do bezpiecznego usuwania
-                 self.grid.remove_agent(agent)
+                self.grid.remove_agent(agent)
 
         # Tworzymy nowych agentów
         for i in range(num_agents):
