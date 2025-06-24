@@ -28,7 +28,7 @@ class Field:
         self.food_availability = food_availability
         self.can_build = can_build
 
-    def update_resources(self, season: Season, weather_condition: int):
+    def update_resources(self, season: Season, weather_condition: int, food_modifier: float = 1.0):
         """
         Aktualizuje zasoby pola w zależności od sezonu i pogody.
 
@@ -48,15 +48,20 @@ class Field:
             self.water_availability = max(0, self.water_availability - 5)
 
         # Modyfikacja dostępności jedzenia w zależności od sezonu
+        base_food_increase = 0
         if season == Season.SPRING:
-            self.food_availability = min(100, self.food_availability + 3)
+            base_food_increase = 3
         elif season == Season.SUMMER:
-            self.food_availability = min(100, self.food_availability + 7)
+            base_food_increase = 7
         elif season == Season.AUTUMN:
-            self.food_availability = min(100, self.food_availability + 1)
+            base_food_increase = 1
         elif season == Season.WINTER:
-            # Zimą jedzenie jest trudniejsze do znalezienia
-            self.food_availability = max(0, self.food_availability - 7)
+            base_food_increase = -7 # Zimą jedzenie jest trudniejsze do znalezienia
+
+        # Zastosowanie globalnego modyfikatora jedzenia
+        # Modyfikator wpływa na przyrost/spadek, a nie na absolutną wartość
+        effective_food_change = base_food_increase * food_modifier
+        self.food_availability = max(0, min(100, self.food_availability + effective_food_change))
 
         # Wpływ pogody na dostępność zasobów
         # Ekstremalne warunki pogodowe zmniejszają dostępność
@@ -71,7 +76,8 @@ class Field:
 
         # Naturalna regeneracja zasobów (w granicach)
         self.water_availability = min(100, self.water_availability + 1)
-        self.food_availability = min(100, self.food_availability + 1)
+        self.food_availability = min(100, self.food_availability + (1 * food_modifier))
+        self.food_availability = max(0, min(100, self.food_availability))
 
     def determine_impact_on_agent(self, agent):
         """

@@ -1,5 +1,5 @@
 """
-Moduł definiujący klasę Agent dla symulacji.
+Moduł definiujący klasę Agent dla symulacji (wersja 2.0 – stabilna 300 + tur)
 """
 from mesa import Agent as MesaAgent
 import numpy as np
@@ -13,19 +13,15 @@ class Agent(MesaAgent):
     Klasa reprezentująca społeczeństwo/plemię w symulacji.
     """
 
+    # ------------------------------------------------------------------ #
+    #                           INICJALIZACJA                            #
+    # ------------------------------------------------------------------ #
     def __init__(self, unique_id: int, model, position: Point = None):
-        """
-        Inicjalizuje agenta z domyślnymi parametrami.
-
-        Args:
-            unique_id (int): Unikalny identyfikator agenta
-            model: Model symulacji, do którego należy agent
-            position (Point, optional): Początkowa pozycja agenta
-        """
         super().__init__(unique_id, model)
+
         # Parametry życiowe
         self.health = 50
-        self.age = 40  # Wartość średnia dla wieku
+        self.age = 40
         self.population = 50
         self.fertility = 50
         self.mortality = 50
@@ -44,79 +40,98 @@ class Agent(MesaAgent):
         # Parametry mobilności
         self.endurance = 50
         self.position = position
+        self.last_migrated = -1  # znacznik ostatniej migracji
 
+        # Atrybuty pamięci
+        self.wars_won = 0
+        self.wars_lost = 0
+        self.crises_survived = 0
+        self.migrations_count = 0
+        self.prosperity_periods = 0
+        self.dominant_trait = "Stable"  # Możliwe: Stable, Warlike, Survivor, Prosperous, Nomadic
+
+    # ------------------------------------------------------------------ #
+    #                       AKTUALIZACJA POPULACJI                       #
+    # ------------------------------------------------------------------ #
     def update_population(self):
         """Aktualizuje liczebność populacji."""
-        new_population = self.population + (self.population * (self.fertility / 200)) - (
-                    self.population * (self.mortality / 200))
+        new_population = (
+            self.population
+            + self.population * (self.fertility / 200)
+            - self.population * (self.mortality / 200)
+        )
         self.population = max(1, min(100, new_population))
-        # Aktualizacja średniego wieku po zmianie liczebności
         self.update_age()
 
-    """
-    Dodatkowe metody modyfikujące do klasy Agent, których brakuje w oryginalnym kodzie
-    """
-
-    # Dodaj te metody do klasy Agent
-
+    # ------------------------------------------------------------------ #
+    #   DODATKOWE METODY, KTÓRYCH BRAKOWAŁO W ORYGINALNYM SZABLONIE      #
+    # ------------------------------------------------------------------ #
     def update_age(self):
         """Aktualizuje średni wiek społeczeństwa."""
-        # Stare jednostki + minimum dla nowych jednostek (przyrost)
-        growth = max(0, (self.population * (self.fertility / 200)))
-        if self.population + growth > 0:  # Zabezpieczenie przed dzieleniem przez 0
-            self.age = ((self.age * self.population) + (1 * growth)) / (self.population + growth)
-        # Naturalny przyrost wieku z czasem
-        self.age += 0.1
-        self.age = min(100, self.age)
+        growth = max(0, self.population * self.fertility / 200)
+        if self.population + growth > 0:
+            self.age = ((self.age * self.population) + growth) / (self.population + growth)
+        self.age = min(100, self.age + 0.1)
 
+    # ----------------------------- ZASOBY ----------------------------- #
     def collect_food_supply(self):
         """Zbiera zapasy jedzenia z aktualnego pola."""
         field = self.model.environment.map.get_field(self.position)
-        if field:
-            amount = min(10, field.food_availability) * (self.resourcefulness / 100)
+        if field and field.food_availability > 0:
+            amount = min(20, field.food_availability) * (self.resourcefulness / 100)
             self.food_supply = min(100, self.food_supply + amount)
-            field.food_availability = max(0, field.food_availability - amount)
+            field.food_availability -= amount
 
     def collect_water_supply(self):
         """Zbiera zapasy wody z aktualnego pola."""
         field = self.model.environment.map.get_field(self.position)
-        if field:
-            amount = min(10, field.water_availability) * (self.resourcefulness / 100)
+        if field and field.water_availability > 0:
+            amount = min(20, field.water_availability) * (self.resourcefulness / 100)
             self.water_supply = min(100, self.water_supply + amount)
-            field.water_availability = max(0, field.water_availability - amount)
+            field.water_availability -= amount
 
     def consume_food_supply(self):
         """Zużywa zapasy jedzenia proporcjonalnie do liczebności."""
-        consumption = self.population / 200  # Bazowe zużycie
-        self.food_supply = max(0, self.food_supply - consumption)
+        self.food_supply = max(0, self.food_supply - self.population / 300)
 
     def consume_water_supply(self):
         """Zużywa zapasy wody proporcjonalnie do liczebności."""
-        consumption = self.population / 200  # Bazowe zużycie
-        self.water_supply = max(0, self.water_supply - consumption)
+        self.water_supply = max(0, self.water_supply - self.population / 300)
 
+    # ----------------------------- MIGRACJA ---------------------------- #
     def migrate(self):
         """Przemieszcza agenta do korzystniejszego pola."""
-        # Implementacja migracji
-        if self.endurance < 25:
-            return  # Za mało wytrzymałości na migrację
+        if self.endurance < 6:
+            return  # Za mało wytrzymałości
 
-        best_terrains = self.model.environment.map.find_most_favorable_terrain(self.position, 3)
-        if best_terrains:
-            new_position = best_terrains[0]
-            field = self.model.environment.map.get_field(self.position)
-            migration_cost = 25 * (1 + field.terrain_difficulty / 100)
+        best_terrains = self.model.environment.map.find_most_favorable_terrain(
+            self.position, radius=4
+        )
+        if not best_terrains:
+            return
 
-            if self.endurance >= migration_cost:
-                self.endurance -= migration_cost
-                self.position = new_position
-                # Zwiększone zużycie zasobów podczas migracji
-                self.consume_food_supply()
-                self.consume_water_supply()
-                self.last_migrated = self.model.current_period
+        new_pos = best_terrains[0]
+        current_field = self.model.environment.map.get_field(self.position)
+        migration_cost = 5 * (1 + current_field.terrain_difficulty / 100)
 
+        if self.endurance >= migration_cost:
+            try:
+                # Jeżeli model używa gridu Mesy – przesuń agenta wizualnie
+                self.model.grid.move_agent(self, (new_pos.x, new_pos.y))
+            except Exception:
+                pass
+            self.position = new_pos
+            self.endurance -= migration_cost
+            # Zwiększone zużycie zasobów podczas migracji
+            self.consume_food_supply()
+            self.consume_water_supply()
+            self.last_migrated = self.model.current_period
+            self.migrations_count += 1
+
+    # ------------------------------------------------------------------ #
+    #                         INTERAKCJE AGENTÓW                         #
+    # ------------------------------------------------------------------ #
     def check_interactions_with_agents(self):
-        """Sprawdza możliwe interakcje z innymi agentami."""
         for agent in self.model.schedule.agents:
             if agent.unique_id != self.unique_id and agent.position == self.position:
                 if self.aggression > 70 and agent.population < self.population:
@@ -125,80 +140,117 @@ class Agent(MesaAgent):
                     self.merge_tribes(agent)
 
     def attack_agent(self, agent) -> bool:
-        """Atakuje innego agenta. Zwraca True jeśli atak się powiódł."""
-        # Implementacja ataku
-        attack_success = (self.population / agent.population) * (self.aggression / 100)
-        if np.random.random() < attack_success:
-            # Atak się powiódł
+        """Atakuje innego agenta."""
+        success_prob = (self.population / agent.population) * (self.aggression / 100)
+        if np.random.random() < success_prob:
             agent.health -= 20
             self.food_supply = min(100, self.food_supply + agent.food_supply * 0.5)
             self.water_supply = min(100, self.water_supply + agent.water_supply * 0.5)
             agent.food_supply *= 0.5
             agent.water_supply *= 0.5
+            self.model.conflicts_this_step += 1
+            self.wars_won += 1
+            agent.wars_lost += 1
+            self.model.conflicts_this_step += 1
             return True
+        else:
+            self.wars_lost += 1
+            agent.wars_won += 1  # Broniący się "wygrywa"
+            self.model.conflicts_this_step += 1  # Nadal był konflikt
         return False
 
     def merge_tribes(self, agent) -> bool:
-        """Łączy plemiona z innym agentem. Zwraca True jeśli łączenie się powiodło."""
-        # Implementacja łączenia plemion
+        """Łączy dwa plemiona, jeśli warunek ufności jest spełniony."""
         if np.random.random() < (self.trust + agent.trust) / 200:
-            # Średnie wartości parametrów
+            # scalanie populacji i parametrów
             self.population += agent.population
             self.health = (self.health + agent.health) / 2
-            self.age = (self.age * self.population + agent.age * agent.population) / (
-                        self.population + agent.population)
+            self.age = (
+                self.age * self.population + agent.age * agent.population
+            ) / (self.population + agent.population)
             self.fertility = (self.fertility + agent.fertility) / 2
             self.mortality = (self.mortality + agent.mortality) / 2
-
-            # Parametry społeczne - średnie ważone
-            self.aggression = (self.aggression * self.population + agent.aggression * agent.population) / (
-                        self.population + agent.population)
-            self.trust = (self.trust * self.population + agent.trust * agent.population) / (
-                        self.population + agent.population)
+            self.aggression = (
+                self.aggression * self.population + agent.aggression * agent.population
+            ) / (self.population + agent.population)
+            self.trust = (
+                self.trust * self.population + agent.trust * agent.population
+            ) / (self.population + agent.population)
             self.resourcefulness = (
-                                               self.resourcefulness * self.population + agent.resourcefulness * agent.population) / (
-                                               self.population + agent.population)
-
-            # Sumowanie zasobów
+                self.resourcefulness * self.population
+                + agent.resourcefulness * agent.population
+            ) / (self.population + agent.population)
             self.food_supply = min(100, self.food_supply + agent.food_supply)
             self.water_supply = min(100, self.water_supply + agent.water_supply)
-
-            # Usunięcie połączonego agenta
             self.model.schedule.remove(agent)
+            self.model.grid.remove_agent(agent)
+
+            self.model.mergers_this_step += 1
+
             return True
         return False
 
-    def progress_to_next_period(self):
-        """Aktualizuje parametry agenta po przejściu do następnego okresu."""
-        # Naturalne zwiększenie wieku
-        self.age = min(100, self.age + 0.1)
+    def update_dominant_trait(self):
+        """ Aktualizuje dominujący 'charakter' plemienia na podstawie historii. """
+        traits = {
+            "Warlike": self.wars_won,
+            "Survivor": self.crises_survived,
+            "Nomadic": self.migrations_count,
+            "Prosperous": self.prosperity_periods
+        }
 
+        # Znajdź cechę z najwyższym wynikiem (i jeśli przekracza pewien próg, np. 3)
+        max_trait = "Stable"
+        max_value = 3  # Próg, aby cecha stała się dominująca
 
+        for trait, value in traits.items():
+            if value > max_value:
+                max_value = value
+                max_trait = trait
+
+        # Jeśli plemię jest bardzo stare i stabilne, może to być jego cecha
+        if max_trait == "Stable" and self.age > 60:
+            max_trait = "Established"  # Dodajemy nową cechę "Ugruntowane"
+
+        self.dominant_trait = max_trait
+    # ------------------------------------------------------------------ #
+    #                           GŁÓWNY KROK                             #
+    # ------------------------------------------------------------------ #
     def step(self):
-        """Wykonuje krok agenta w symulacji."""
+        """Wykonuje pojedynczy krok agenta w symulacji."""
+        # Sprawdzanie kryzysu i dobrobytu
+        is_in_crisis_now = self.hunger > 80 or self.thirst > 80 or self.health < 20
+        is_prosperous_now = self.food_supply > 80 and self.water_supply > 80 and self.health > 80
+
+        if is_in_crisis_now:
+            self.crises_survived += 1 # Liczymy każdy krok w kryzysie
+        if is_prosperous_now:
+            self.prosperity_periods += 1
+
+        # --- 1. Aktualizacje podstawowych potrzeb ---
         self.update_hunger()
         self.update_thirst()
         self.update_health()
         self.update_population()
 
-        # Zbieranie zasobów
-        if self.hunger > 60:
+        # --- 2. Zbieranie zasobów ---
+        if self.hunger > 45:
             self.collect_food_supply()
-        if self.thirst > 60:
+        if self.thirst > 45:
             self.collect_water_supply()
 
-        # Zużywanie zasobów
+        # --- 3. Zużycie zasobów ---
         self.consume_food_supply()
         self.consume_water_supply()
 
-        # Decyzje strategiczne
-        if self.food_supply < 30 or self.water_supply < 30:
+        # --- 4. Decyzja o migracji ---
+        if (self.hunger > 40 or self.thirst > 40) and self.endurance > 6:
             self.migrate()
 
-        # Interakcje z innymi agentami
+        # --- 5. Interakcje społeczne ---
         self.check_interactions_with_agents()
 
-        # Aktualizacja parametrów społecznych
+        # --- 6. Parametry społeczne i wytrzymałość ---
         self.calculate_fertility()
         self.calculate_mortality()
         self.calculate_aggression()
@@ -206,336 +258,245 @@ class Agent(MesaAgent):
         self.calculate_resourcefulness()
         self.calculate_endurance()
 
+        # --- 7. Upływ czasu ---
         self.progress_to_next_period()
 
+        # --- 8. Aktualizacja cechy co 25 kroków ---
+        if self.model.current_period % 25 == 0:
+            self.update_dominant_trait()
+
+    # ------------------------------------------------------------------ #
+    #                KALKULATORY PARAMETRÓW SPOŁECZNYCH                  #
+    # ------------------------------------------------------------------ #
     def calculate_fertility(self):
-        """Oblicza rozmnażalność na podstawie aktualnych parametrów."""
-        base_fertility = self.fertility
-
-        # Czynniki zwiększające rozmnażalność
+        base = self.fertility
         if self.health > 70:
-            base_fertility += 5
+            base += 5
         if self.hunger < 40:
-            base_fertility += 3
+            base += 3
         if self.thirst < 40:
-            base_fertility += 3
+            base += 3
         if 30 < self.population < 90:
-            base_fertility += 2
+            base += 2
         if self.age < 35:
-            base_fertility += 4
-
-        # Czynniki zmniejszające rozmnażalność
+            base += 4
         if self.hunger > 60:
-            base_fertility -= 5
+            base -= 5
         if self.thirst > 60:
-            base_fertility -= 5
+            base -= 5
         if self.health < 40:
-            base_fertility -= 5
-
+            base -= 5
         field = self.model.environment.map.get_field(self.position)
         if field and field.danger > 70:
-            base_fertility -= 4
-
-        if self.population > 90:
-            base_fertility -= 6  # Przeludnienie
-        if self.population < 30:
-            base_fertility -= 6  # Zbyt mała populacja
+            base -= 4
+        if self.population > 90 or self.population < 30:
+            base -= 6
         if self.age > 50:
-            base_fertility -= 4  # Starsze społeczeństwo
-
-        # Ograniczenie wartości do zakresu 1-100
-        self.fertility = max(1, min(100, base_fertility))
+            base -= 4
+        self.fertility = max(1, min(100, base))
 
     def calculate_mortality(self):
-        """Oblicza śmiertelność na podstawie aktualnych parametrów."""
-        base_mortality = self.mortality
-
-        # Czynniki zwiększające śmiertelność
+        base = self.mortality
         if self.health < 40:
-            base_mortality += 7
+            base += 7
         if self.hunger > 80:
-            base_mortality += 10
+            base += 9
         if self.thirst > 80:
-            base_mortality += 12
+            base += 11
         if self.age > 45:
-            # Zwiększa się proporcjonalnie do wieku
-            base_mortality += (self.age - 45) / 5
-
+            base += (self.age - 45) / 5
         field = self.model.environment.map.get_field(self.position)
         if field and field.danger > 70:
-            base_mortality += 8
-
-        weather = self.model.environment.weather_condition
-        if weather > 80:
-            base_mortality += 6
-
+            base += 7
+        if self.model.environment.weather_condition > 80:
+            base += 5
         if self.aggression > 80:
-            base_mortality += 3  # Konflikty wewnętrzne
-
-        # Czynniki zmniejszające śmiertelność
+            base += 3
         if self.health > 70:
-            base_mortality -= 5
+            base -= 5
         if self.hunger < 40:
-            base_mortality -= 3
+            base -= 3
         if self.thirst < 40:
-            base_mortality -= 3
-
+            base -= 3
         if field and field.danger < 30:
-            base_mortality -= 2
-
+            base -= 2
         if self.age < 35:
-            base_mortality -= 4
-
-        # Ograniczenie wartości do zakresu 1-100
-        self.mortality = max(1, min(100, base_mortality))
+            base -= 4
+        self.mortality = max(1, min(100, base))
 
     def calculate_aggression(self):
-        """Oblicza agresję na podstawie aktualnych parametrów."""
-        base_aggression = self.aggression
-
-        # Czynniki zwiększające agresję
+        base = self.aggression
         if self.hunger > 70:
-            base_aggression += 8
+            base += 7
         if self.thirst > 70:
-            base_aggression += 8
+            base += 7
         if self.population > 80:
-            base_aggression += 5
+            base += 5
         if self.trust < 30:
-            base_aggression += 7
+            base += 6
         if self.resourcefulness < 30:
-            base_aggression += 4
+            base += 4
         if self.food_supply < 30:
-            base_aggression += 6
+            base += 5
         if self.water_supply < 30:
-            base_aggression += 6
-
-        # Czynniki zmniejszające agresję
+            base += 5
         if self.trust > 70:
-            base_aggression -= 7
+            base -= 6
         if self.food_supply > 80:
-            base_aggression -= 5
+            base -= 5
         if self.water_supply > 80:
-            base_aggression -= 5
+            base -= 5
         if self.population < 30:
-            base_aggression -= 3
+            base -= 3
         if self.health < 30:
-            base_aggression -= 4
+            base -= 4
         if self.resourcefulness > 70:
-            base_aggression -= 6
-
-        # Ograniczenie wartości do zakresu 1-100
-        self.aggression = max(1, min(100, base_aggression))
+            base -= 6
+        self.aggression = max(1, min(100, base))
 
     def calculate_trust(self):
-        """Oblicza ufność na podstawie aktualnych parametrów."""
-        base_trust = self.trust
-
-        # Czynniki zwiększające ufność
+        base = self.trust
         if self.food_supply > 80:
-            base_trust += 6
+            base += 6
         if self.water_supply > 80:
-            base_trust += 6
-
+            base += 6
         field = self.model.environment.map.get_field(self.position)
         if field and field.danger < 40:
-            base_trust += 4
-
+            base += 4
         if self.resourcefulness > 70:
-            base_trust += 5
+            base += 5
         if self.health > 70:
-            base_trust += 4
-
-        # Czynniki zmniejszające ufność
+            base += 4
         if field and field.danger > 60:
-            base_trust -= 6
-
-        # Sprawdzenie, czy agent został wcześniej zaatakowany
-        # Ta funkcja wymagałaby utrzymywania historii ataków
-
+            base -= 6
         if self.hunger > 70:
-            base_trust -= 5
+            base -= 5
         if self.thirst > 70:
-            base_trust -= 5
+            base -= 5
         if self.aggression > 70:
-            base_trust -= 7
-
-        weather = self.model.environment.weather_condition
-        if weather > 80:
-            base_trust -= 4
-
-        # Ograniczenie wartości do zakresu 1-100
-        self.trust = max(1, min(100, base_trust))
+            base -= 6
+        if self.model.environment.weather_condition > 80:
+            base -= 4
+        self.trust = max(1, min(100, base))
 
     def calculate_resourcefulness(self):
-        """Oblicza zaradność na podstawie aktualnych parametrów."""
-        base_resourcefulness = self.resourcefulness
-
-        # Czynniki zwiększające zaradność
+        base = self.resourcefulness
         if self.age > 40:
-            # Wzrasta proporcjonalnie z wiekiem (doświadczenie)
-            base_resourcefulness += min(15, (self.age - 40) / 4)
-
+            base += min(15, (self.age - 40) / 4)
         if self.health > 60:
-            base_resourcefulness += 4
+            base += 4
         if self.hunger < 50:
-            base_resourcefulness += 2
+            base += 2
         if self.thirst < 50:
-            base_resourcefulness += 2
+            base += 2
         if self.population > 40:
-            base_resourcefulness += 3
-
-        # Tu można by dodać mechanizm uczenia się z przetrwanych trudnych okresów
-
-        # Czynniki zmniejszające zaradność
+            base += 3
         if self.health < 40:
-            base_resourcefulness -= 5
+            base -= 5
         if self.hunger > 70:
-            base_resourcefulness -= 6
+            base -= 6
         if self.thirst > 70:
-            base_resourcefulness -= 6
+            base -= 6
         if self.population < 30:
-            base_resourcefulness -= 4
-
-        weather = self.model.environment.weather_condition
-        if weather > 80:
-            base_resourcefulness -= 5
-
-        # Ograniczenie wartości do zakresu 1-100
-        self.resourcefulness = max(1, min(100, base_resourcefulness))
+            base -= 4
+        if self.model.environment.weather_condition > 80:
+            base -= 5
+        self.resourcefulness = max(1, min(100, base))
 
     def calculate_endurance(self):
-        """Oblicza wytrzymałość na podstawie aktualnych parametrów."""
-        base_endurance = self.endurance
-
-        # Czynniki zwiększające wytrzymałość
-        # Jeśli agent nie migruje, wytrzymałość się regeneruje
-        if not hasattr(self, 'last_migrated') or self.model.current_period - self.last_migrated > 1:
-            base_endurance += 5
-
+        base = self.endurance
+        # silniejsza regeneracja
+        if self.last_migrated == -1 or self.model.current_period - self.last_migrated > 1:
+            base += 10
         if self.health > 70:
-            base_endurance += 4
+            base += 4
         if self.resourcefulness > 60:
-            base_endurance += 3
+            base += 3
         if self.food_supply > 60:
-            base_endurance += 2
+            base += 2
         if self.water_supply > 60:
-            base_endurance += 2
-
-        # Czynniki zmniejszające wytrzymałość
+            base += 2
         if self.health < 50:
-            base_endurance -= 3
+            base -= 2
         if self.hunger > 60:
-            base_endurance -= 4
+            base -= 3
         if self.thirst > 60:
-            base_endurance -= 5
-
+            base -= 4
         field = self.model.environment.map.get_field(self.position)
         if field and field.terrain_difficulty > 70:
-            base_endurance -= 3
-
-        weather = self.model.environment.weather_condition
-        if weather > 80:
-            base_endurance -= 5
-
+            base -= 2
+        if self.model.environment.weather_condition > 80:
+            base -= 4
         if self.population > 90:
-            base_endurance -= 4  # Zbyt duża grupa do efektywnego przemieszczania
+            base -= 3
+        self.endurance = max(1, min(100, base))
 
-        # Ograniczenie wartości do zakresu 1-100
-        self.endurance = max(1, min(100, base_endurance))
-
+    # ------------------------------------------------------------------ #
+    #             AKTUALIZACJE GŁODU, PRAGNIENIA, ZDROWIA                #
+    # ------------------------------------------------------------------ #
     def update_hunger(self):
-        """Aktualizuje poziom głodu."""
-        base_hunger = self.hunger
-
-        # Czynniki zwiększające głód
+        base = self.hunger + 1
         if self.food_supply < 30:
-            base_hunger += 8
-
-        # Naturalny przyrost głodu z czasem
-        base_hunger += 3
-
+            base += 7
         if self.endurance < 40:
-            base_hunger += 2
+            base += 2
         if self.population > 70:
-            base_hunger += 3
-
-        weather = self.model.environment.weather_condition
-        if weather > 70:  # Niesprzyjające warunki pogodowe
-            base_hunger += 2
-
-        # Czynniki zmniejszające głód
-        if self.food_supply > 60:
-            base_hunger -= 5
+            base += 2
+        if self.model.environment.weather_condition > 70:
+            base += 1
+        if self.food_supply > 50:
+            base -= 5
         if self.resourcefulness > 70:
-            base_hunger -= 3
-
-        # Ograniczenie wartości do zakresu 1-100
-        self.hunger = max(1, min(100, base_hunger))
+            base -= 3
+        self.hunger = max(1, min(100, base))
 
     def update_thirst(self):
-        """Aktualizuje poziom pragnienia."""
-        base_thirst = self.thirst
-
-        # Czynniki zwiększające pragnienie
+        base = self.thirst + 1
         if self.water_supply < 30:
-            base_thirst += 10
-
-        # Naturalny przyrost pragnienia z czasem
-        base_thirst += 4
-
+            base += 9
         if self.endurance < 40:
-            base_thirst += 3
+            base += 2
         if self.population > 70:
-            base_thirst += 3
-
-        weather = self.model.environment.weather_condition
-        if weather > 70:  # Niesprzyjające warunki pogodowe (np. upały)
-            base_thirst += 5
-
-        # Czynniki zmniejszające pragnienie
-        if self.water_supply > 60:
-            base_thirst -= 7
+            base += 2
+        if self.model.environment.weather_condition > 70:
+            base += 2
+        if self.water_supply > 50:
+            base -= 7
         if self.resourcefulness > 70:
-            base_thirst -= 3
-
-        weather = self.model.environment.weather_condition
-        if weather < 30:  # Sprzyjające warunki (np. deszcze)
-            base_thirst -= 2
-
-        # Ograniczenie wartości do zakresu 1-100
-        self.thirst = max(1, min(100, base_thirst))
+            base -= 3
+        if self.model.environment.weather_condition < 30:
+            base -= 2
+        self.thirst = max(1, min(100, base))
 
     def update_health(self):
-        """Aktualizuje poziom zdrowia na podstawie parametrów."""
-        base_health = self.health
-
-        # Czynniki zwiększające zdrowie
-        if self.hunger < 30:
-            base_health += 3
-        if self.thirst < 30:
-            base_health += 3
-
         field = self.model.environment.map.get_field(self.position)
+        base = self.health
+        if self.hunger < 30:
+            base += 5
+        if self.thirst < 30:
+            base += 5
+        if self.food_supply > 50 and self.water_supply > 50:
+            base += 4
         if field and field.danger < 40:
-            base_health += 2
+            base += 2
         if self.age < 35:
-            base_health += 2
-
-        # Czynniki zmniejszające zdrowie
+            base += 2
         if self.hunger > 70:
-            base_health -= 5
+            base -= 4
         if self.thirst > 70:
-            base_health -= 7
+            base -= 6
         if field and field.danger > 60:
-            base_health -= 4
+            base -= 3
         if self.mortality > 60:
-            base_health -= 3
+            base -= 3
         if self.age > 45:
-            base_health -= 2
+            base -= 2
+        if self.model.environment.weather_condition > 80:
+            base -= 2
+        self.health = max(1, min(100, base))
 
-        weather = self.model.environment.weather_condition
-        if weather > 80:
-            base_health -= 5
-
-        # Ograniczenie wartości do zakresu 1-100
-        self.health = max(1, min(100, base_health))
+    # ------------------------------------------------------------------ #
+    #                   UPŁYW OKRESU (wiek +0.1)                         #
+    # ------------------------------------------------------------------ #
+    def progress_to_next_period(self):
+        self.age = min(100, self.age + 0.1)
