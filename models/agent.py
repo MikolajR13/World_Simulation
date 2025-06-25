@@ -13,6 +13,10 @@ class Agent(MesaAgent):
     Klasa reprezentująca społeczeństwo/plemię w symulacji.
     """
 
+    # parametry klasowe dla ograniczenia łączenia
+    MERGE_COOLDOWN = 15  # Ile kroków trzeba odczekać między połączeniami
+    MAX_POP_BEFORE_SPLIT = 120  # Powyżej tego limitu może nastąpić rozpad
+
     # ------------------------------------------------------------------ #
     #                           INICJALIZACJA                            #
     # ------------------------------------------------------------------ #
@@ -49,6 +53,9 @@ class Agent(MesaAgent):
         self.migrations_count = 0
         self.prosperity_periods = 0
         self.dominant_trait = "Stable"  # Możliwe: Stable, Warlike, Survivor, Prosperous, Nomadic
+
+        # zapamiętanie kiedy ostatni raz agent się połączył
+        self.last_merged_step = -9999
 
     # ------------------------------------------------------------------ #
     #                       AKTUALIZACJA POPULACJI                       #
@@ -136,7 +143,11 @@ class Agent(MesaAgent):
             if agent.unique_id != self.unique_id and agent.position == self.position:
                 if self.aggression > 70 and agent.population < self.population:
                     self.attack_agent(agent)
-                elif self.trust > 70 and agent.trust > 50:
+                # ograniczenie merge'ów przez cooldown i warunki
+                elif (self.trust > 70 and agent.trust > 50
+                      and self.population < 80 and agent.population < 80
+                      and self.model.current_period - self.last_merged_step > self.MERGE_COOLDOWN
+                      and self.model.current_period - agent.last_merged_step > self.MERGE_COOLDOWN):
                     self.merge_tribes(agent)
 
     def attack_agent(self, agent) -> bool:
@@ -184,8 +195,10 @@ class Agent(MesaAgent):
             self.water_supply = min(100, self.water_supply + agent.water_supply)
             self.model.schedule.remove(agent)
             self.model.grid.remove_agent(agent)
-
             self.model.mergers_this_step += 1
+
+            # zapamiętaj czas ostatniego merge’a
+            self.last_merged_step = self.model.current_period
 
             return True
         return False
@@ -213,6 +226,7 @@ class Agent(MesaAgent):
             max_trait = "Established"  # Dodajemy nową cechę "Ugruntowane"
 
         self.dominant_trait = max_trait
+
     # ------------------------------------------------------------------ #
     #                           GŁÓWNY KROK                             #
     # ------------------------------------------------------------------ #
@@ -264,6 +278,11 @@ class Agent(MesaAgent):
         # --- 8. Aktualizacja cechy co 25 kroków ---
         if self.model.current_period % 25 == 0:
             self.update_dominant_trait()
+
+        # losowa szansa na rozpad plemienia, by utrzymać dynamikę
+        if self.population > self.MAX_POP_BEFORE_SPLIT and np.random.random() < 0.1:
+            self.split_tribe()
+
 
     # ------------------------------------------------------------------ #
     #                KALKULATORY PARAMETRÓW SPOŁECZNYCH                  #
